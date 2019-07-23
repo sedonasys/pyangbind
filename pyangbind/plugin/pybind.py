@@ -299,7 +299,7 @@ def build_pybind(ctx, modules, fd):
     if len(ctx.errors):
         for e in ctx.errors:
             print("INFO: encountered %s" % str(e))
-            if not e[1] in ["UNUSED_IMPORT", "PATTERN_ERROR"]:
+            if not e[1] in ["UNUSED_IMPORT", "PATTERN_ERROR", "LEAFREF_TO_NOT_IMPLEMENTED"]:
                 sys.stderr.write("FATAL: pyangbind cannot build module that pyang" + " has found errors with.\n")
                 sys.exit(127)
 
@@ -337,9 +337,13 @@ elif six.PY2:
   import __builtin__
 
 """
+    mod_rev = [f"'{mod.arg}': " + str({'revision': mod.i_latest_revision, 'namespace': mod.search_one('namespace').arg,
+               'features': ctx.features.get(mod.arg, list(mod.i_features.keys()))}) for mod in modules]
+    ctx.pybind_module_list = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
 
     if not ctx.opts.split_class_dir:
         fd.write(ctx.pybind_common_hdr)
+        fd.write(ctx.pybind_module_list)
     else:
         ctx.pybind_split_basepath = os.path.abspath(ctx.opts.split_class_dir)
         if not os.path.exists(ctx.pybind_split_basepath):
@@ -693,6 +697,9 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             except IOError as m:
                 raise IOError("could not open pyangbind output file (%s)" % m)
             nfd.write(ctx.pybind_common_hdr)
+
+            if path == '':
+                nfd.write(ctx.pybind_module_list)
         else:
             try:
                 if six.PY3:
@@ -763,6 +770,17 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             if ctx.opts.split_class_dir:
                 if hasattr(ch, "i_children") and len(ch.i_children):
                     import_req.append(ch.arg)
+
+    if len(elements) == 0:
+        try:
+            nfd.flush()
+            os.fsync(nfd.fileno())
+        except OSError:
+            pass
+
+        if ctx.opts.split_class_dir:
+            nfd.close()
+        return None
 
     # Write out the import statements if needed.
     if ctx.opts.split_class_dir:
