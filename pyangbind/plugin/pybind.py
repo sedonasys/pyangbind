@@ -337,17 +337,27 @@ elif six.PY2:
   import __builtin__
 
 """
-    mod_rev = [f"'{mod.arg}': " + str({'revision': mod.i_latest_revision, 'namespace': mod.search_one('namespace').arg,
-               'features': ctx.features.get(mod.arg, list(mod.i_features.keys()))}) for mod in modules]
-    ctx.pybind_module_list = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
+    mod_rev = [
+        f"'{mod.arg}': {{'revision': '{mod.i_latest_revision}', 'namespace': '{mod.search_one('namespace').arg}', " +
+        f"'features': {ctx.features.get(mod.arg, list(mod.i_features.keys()))}, 'clazz': {safe_name(mod.arg)}}}"
+        for mod in modules]
+    module_library = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
 
-    if not ctx.opts.split_class_dir:
-        fd.write(ctx.pybind_common_hdr)
-        fd.write(ctx.pybind_module_list)
-    else:
+    if ctx.opts.split_class_dir:
         ctx.pybind_split_basepath = os.path.abspath(ctx.opts.split_class_dir)
         if not os.path.exists(ctx.pybind_split_basepath):
             os.makedirs(ctx.pybind_split_basepath)
+        fd = open("%s/__init__.py" % ctx.pybind_split_basepath, "w", encoding="utf-8")
+
+    fd.write(ctx.pybind_common_hdr)
+    if ctx.opts.split_class_dir:
+        for mod in modules:
+            fd.write("from .%s import %s\n" % (safe_name(mod.arg), safe_name(mod.arg)))
+        fd.write("\n")
+    fd.write(module_library)
+
+    if ctx.opts.split_class_dir:
+        fd.close()
 
     # Determine all modules, and submodules that are needed, along with the
     # prefix that is used for it. We need to ensure that we understand all of the
@@ -420,7 +430,7 @@ elif six.PY2:
                 mods.append(subm)
         for m in mods:
             children = [ch for ch in module.i_children if ch.keyword in statements.data_definition_keywords]
-            get_children(ctx, fd, children, m, m)
+            get_children(ctx, fd, children, m, m, path="/" + safe_name(module.arg))
 
             if ctx.opts.build_rpcs:
                 rpcs = [ch for ch in module.i_children if ch.keyword == "rpc"]
@@ -428,7 +438,8 @@ elif six.PY2:
                 # can be used as a proxy for the namespace.
                 if len(rpcs):
                     get_children(
-                        ctx, fd, rpcs, module, module, register_paths=False, path="/%s_rpc" % (safe_name(module.arg))
+                        ctx, fd, rpcs, module, module, register_paths=False, path="/%s_rpc" % (safe_name(module.arg)),
+                        is_data_tree=False
                     )
 
             if ctx.opts.build_notifications:
@@ -444,6 +455,7 @@ elif six.PY2:
                         module,
                         register_paths=False,
                         path="/%s_notification" % (safe_name(module.arg)),
+                        is_data_tree=False
                     )
 
 
@@ -651,7 +663,8 @@ def build_typedefs(ctx, defnd):
         class_map[type_name.split(":")[1]] = class_map[type_name]
 
 
-def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=True, choice=False, register_paths=True):
+def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=True, choice=False, register_paths=True,
+                 is_data_tree=True):
 
     # Iterative function that is called for all elements that have childen
     # data nodes in the tree. This function resolves those nodes into the
@@ -697,9 +710,6 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             except IOError as m:
                 raise IOError("could not open pyangbind output file (%s)" % m)
             nfd.write(ctx.pybind_common_hdr)
-
-            if path == '':
-                nfd.write(ctx.pybind_module_list)
         else:
             try:
                 if six.PY3:
@@ -771,16 +781,16 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 if hasattr(ch, "i_children") and len(ch.i_children):
                     import_req.append(ch.arg)
 
-    if len(elements) == 0:
-        try:
-            nfd.flush()
-            os.fsync(nfd.fileno())
-        except OSError:
-            pass
-
-        if ctx.opts.split_class_dir:
-            nfd.close()
-        return None
+    # if len(elements) == 0:
+    #     try:
+    #         nfd.flush()
+    #         os.fsync(nfd.fileno())
+    #     except OSError:
+    #         pass
+    #
+    #     if ctx.opts.split_class_dir:
+    #         nfd.close()
+    #     return None
 
     # Write out the import statements if needed.
     if ctx.opts.split_class_dir:
@@ -797,7 +807,7 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
         if ctx.opts.split_class_dir:
             nfd.write("class %s(PybindBase):\n" % safe_name(parent.arg))
         else:
-            if not path == "":
+            if len(path.split("/")) > 2:
                 nfd.write(
                     "class yc_%s_%s_%s(PybindBase):\n"
                     % (safe_name(parent.arg), safe_name(module.arg), safe_name(path.replace("/", "_")))
@@ -1092,7 +1102,7 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
       return self._parent._path()+[self._yang_name]
     else:
       return %s\n"""
-            % path.split("/")[1:]
+            % path.split("/")[2 if is_data_tree else 1:]
         )
 
         # For each element, write out a getter and setter method - with the doc
