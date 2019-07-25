@@ -450,7 +450,19 @@ def TypedListType(*args, **kwargs):
                     if hasattr(i, "_pybind_generated_by"):
                         attr = getattr(i, "_pybind_generated_by")
                         if attr == "RestrictedClassType":
-                            tmp = i(v)
+                            tmp = YANGDynClass(v,
+                                               base=i,
+                                               yang_name=self._yang_name,
+                                               parent=self,
+                                               is_leaf=True,
+                                               path_helper=self._path_helper,
+                                               extmethods=self._extmethods,
+                                               register_paths=self._register_paths,
+                                               yang_type=self._yang_type,
+                                               namespace=self._namespace,
+                                               defining_module=self._defining_module,
+                                               is_config=self._is_config
+                                               )
                             passed = True
                             break
                         elif attr == "ReferencePathType":
