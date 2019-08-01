@@ -176,6 +176,13 @@ class_map = {
             base_type=long, restriction_dict={"range": ["-9223372036854775808..9223372036854775807"]}, int_size=64
         ),
     },
+    "bits": {
+        "native_type": (
+            "RestrictedClassType(base_type=int," + " restriction_dict={'range': ['0..65535']}," + "int_size=16)"
+        ),
+        "base_type": True,
+        "pytype": RestrictedClassType(base_type=int, restriction_dict={"range": ["0..65535"]}, int_size=16),
+    },
 }
 
 # We have a set of types which support "range" statements in RFC6020. This
@@ -560,6 +567,9 @@ def build_typedefs(ctx, defnd):
                 tn = "%s:%s" % (real_pfx, i.arg)
             else:
                 tn = i.arg
+
+            if tn == 'bits':
+                sys.stderr.write(f"WARNING: 'bits' type is used by {t} but Not supported\n")
 
             if tn not in known_types:
                 any_unknown = True
