@@ -21,7 +21,7 @@ import sys
 
 def module_import_prefixes(ctx):
     mod_ref_prefixes = {}
-    for mod in ctx.modules:
+    for mod in list(ctx.modules):
         m = ctx.search_module(0, mod[0])
         for importstmt in m.search("import"):
             if importstmt.arg not in mod_ref_prefixes:
