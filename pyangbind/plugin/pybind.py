@@ -1107,9 +1107,9 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
         # a path in the form of a list that describes the nodes in the hierarchy.
         nfd.write(
             """
-  def _path(self):
+  def _path(self, ietf=False):
     if hasattr(self, "_parent"):
-      return self._parent._path()+[self._yang_name]
+      return self._parent._path(ietf)+[self._yang_name]
     else:
       return %s\n"""
             % path.split("/")[2 if is_data_tree else 1:]

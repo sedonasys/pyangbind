@@ -534,6 +534,15 @@ def TypedListType(*args, **kwargs):
     return type(TypedList(*args, **kwargs))
 
 
+def yname_ns_func(element):
+    if not element._namespace == element._parent._namespace:
+        # if the namespace is different, then precede with the module
+        # name as per spec.
+        return "%s:%s" % (element._defining_module, element._yang_name)
+    else:
+        return element._yang_name
+
+
 def YANGListType(*args, **kwargs):
     """
     Return a type representing a YANG list, with a contained class.
@@ -714,6 +723,7 @@ def YANGListType(*args, **kwargs):
                             namespace=self._namespace,
                             path_helper=path_helper,
                             register_path=(self._parent._path() + [self._yang_name + path_keystring]),
+                            register_path_ietf=(self._parent._path(True) + [yname_ns_func(self) + path_keystring]),
                             extmethods=self._parent._extmethods,
                             extensions=extensions,
                         )
@@ -730,6 +740,7 @@ def YANGListType(*args, **kwargs):
                             namespace=self._namespace,
                             path_helper=path_helper,
                             register_path=(self._parent._path() + [self._yang_name + path_keystring]),
+                            register_path_ietf=(self._parent._path(True) + [yname_ns_func(self) + path_keystring]),
                             extmethods=self._parent._extmethods,
                             load=True,
                             extensions=extensions,
@@ -964,6 +975,7 @@ def YANGDynClass(*args, **kwargs):
     is_leaf = kwargs.pop("is_leaf", False)
     path_helper = kwargs.pop("path_helper", None)
     supplied_register_path = kwargs.pop("register_path", None)
+    supplied_register_path_ietf = kwargs.pop("register_path_ietf", None)
     extensions = kwargs.pop("extensions", None)
     extmethods = kwargs.pop("extmethods", None)
     is_keyval = kwargs.pop("is_keyval", False)
@@ -1005,6 +1017,7 @@ def YANGDynClass(*args, **kwargs):
         "_choice",
         "_parent",
         "_supplied_register_path",
+        "_supplied_register_path_ietf",
         "_path_helper",
         "_base_type",
         "_is_leaf",
@@ -1063,6 +1076,7 @@ def YANGDynClass(*args, **kwargs):
             self._choice = choice_member
             self._path_helper = path_helper
             self._supplied_register_path = supplied_register_path
+            self._supplied_register_path_ietf = supplied_register_path_ietf
             self._base_type = base_type
             self._is_leaf = is_leaf
             self._is_container = is_container
@@ -1124,8 +1138,8 @@ def YANGDynClass(*args, **kwargs):
         def _extensions(self):
             return self._extensionsd
 
-        def _path(self):
-            return self._register_path()
+        def _path(self, ietf=False):
+            return self._register_path(ietf)
 
         def _yang_path(self):
             return "/" + "/".join(self._register_path())
@@ -1208,11 +1222,16 @@ def YANGDynClass(*args, **kwargs):
             self._set()
             super(YANGBaseClass, self).insert(*args, **kwargs)
 
-        def _register_path(self):
-            if self._supplied_register_path is not None:
+        def _register_path(self, ietf=False):
+            if not ietf and self._supplied_register_path is not None:
                 return self._supplied_register_path
+            if ietf and self._supplied_register_path_ietf is not None:
+                return self._supplied_register_path_ietf
             if self._parent is not None:
-                return self._parent._path() + [self._yang_name]
+                return self._parent._path(ietf) + \
+                       [(self._defining_module + ':'
+                         if ietf and self._defining_module != getattr(self._parent,'_defining_module', None) else
+                         '') + self._yang_name]
             else:
                 return []
 
