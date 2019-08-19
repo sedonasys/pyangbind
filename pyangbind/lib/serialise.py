@@ -713,8 +713,8 @@ class pybindJSONDecoder(object):
 
     @staticmethod
     def load_ietf_json(
-        d, parent, yang_base, obj=None, path_helper=None, extmethods=None, overwrite=False, skip_unknown=False
-    ):
+        d, parent, yang_base, obj=None, path_helper=None, extmethods=None, overwrite=False, skip_unknown=False,
+        allow_non_config=True, fail_if_value_exist=False):
         if obj is None:
             # we need to find the class to create, as one has not been supplied.
             base_mod_cls = getattr(parent, safe_name(yang_base))
@@ -737,6 +737,7 @@ class pybindJSONDecoder(object):
         # Handle the case where we are supplied with a scalar value rather than
         # a list
         if not isinstance(d, dict) or isinstance(d, list):
+            pybindJSONDecoder._check_configurable(allow_non_config, obj)
             set_method = getattr(obj._parent, "_set_%s" % safe_name(obj._yang_name))
             set_method(d)
             return obj
@@ -764,12 +765,15 @@ class pybindJSONDecoder(object):
                 # Iterate through attributes and set to that value
                 attr_get = getattr(obj, "_get_%s" % safe_name(ykey), None)
                 if attr_get is None and skip_unknown is False:
-                    raise AttributeError("Invalid attribute specified (%s)" % ykey)
+                    pybindJSONDecoder._non_existing_path(obj, key)
                 elif attr_get is None and skip_unknown is not False:
                     # Skip unknown JSON keys
                     continue
 
                 chobj = attr_get()
+                pybindJSONDecoder._check_configurable(allow_non_config, chobj)
+                if chobj._changed():
+                    pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, chobj)
                 if hasattr(chobj, "_presence"):
                     if chobj._presence:
                         chobj._set_present()
@@ -784,13 +788,15 @@ class pybindJSONDecoder(object):
                     extmethods=extmethods,
                     overwrite=overwrite,
                     skip_unknown=skip_unknown,
+                    allow_non_config=allow_non_config,
+                    fail_if_value_exist=fail_if_value_exist
                 )
             elif isinstance(d[key], list):
                 for elem in d[key]:
                     # if this is a list, then this is a YANG list
                     this_attr = getattr(obj, "_get_%s" % safe_name(ykey), None)
                     if this_attr is None:
-                        raise AttributeError("List specified that did not exist")
+                        pybindJSONDecoder._non_existing_path(obj, key)
                     this_attr = this_attr()
                     if hasattr(this_attr, "_keyval"):
                         if overwrite:
@@ -813,12 +819,14 @@ class pybindJSONDecoder(object):
                                 nobj = this_attr.add(**kwargs)
                             else:
                                 nobj = this_attr[keystr]
+                                pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
                         else:
                             k = elem[this_attr._yang_keys]
                             if k not in this_attr:
                                 nobj = this_attr.add(k)
                             else:
                                 nobj = this_attr[k]
+                                pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
                         pybindJSONDecoder.load_ietf_json(
                             elem,
                             None,
@@ -828,6 +836,8 @@ class pybindJSONDecoder(object):
                             extmethods=extmethods,
                             overwrite=overwrite,
                             skip_unknown=skip_unknown,
+                            allow_non_config=allow_non_config,
+                            fail_if_value_exist=fail_if_value_exist
                         )
                         pybindJSONDecoder.check_metadata_add(key, d, nobj)
                     else:
@@ -839,10 +849,12 @@ class pybindJSONDecoder(object):
             if std_method_set:
                 get_method = getattr(obj, "_get_%s" % safe_name(ykey), None)
                 if get_method is None and skip_unknown is False:
-                    raise AttributeError("JSON object contained a key that " + "did not exist (%s)" % (ykey))
+                    pybindJSONDecoder._non_existing_path(obj, key)
                 elif get_method is None and skip_unknown is not False:
                     continue
                 chk = get_method()
+                if chk._changed():
+                    pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, chk)
                 if chk._is_keyval is True:
                     pass
                 else:
@@ -870,3 +882,34 @@ class pybindJSONDecoder(object):
                         set_method(val)
                 pybindJSONDecoder.check_metadata_add(key, d, get_method())
         return obj
+
+    # @staticmethod
+    # def _handle_list_overwrite(overwrite: bool, yang_list_obj):
+    #     if overwrite:
+    #         existing_keys = yang_list_obj.keys()
+    #         for i in existing_keys:
+    #             yang_list_obj.delete(i)
+
+    @staticmethod
+    def _check_configurable(allow_non_config: bool, obj):
+        if not allow_non_config and not obj._is_config:
+            raise ValueError("Tried to set a non-config value at " + ietf_path(obj))
+
+    @staticmethod
+    def _non_existing_path(obj, key):
+        raise AttributeError("non-exitsting path '%s/%s'" % (ietf_path(obj), key))
+
+    @staticmethod
+    def _check_fail_if_value_exists(fail_if_value_exist: bool, obj):
+        if fail_if_value_exist:
+            raise ValueAlreadyExistsError(ietf_path(obj))
+
+
+class ValueAlreadyExistsError(ValueError):
+    def __init__(self, path: str):
+        super().__init__()
+        self.path = path
+
+
+def ietf_path(obj):
+    return '/'.join(obj._register_path(ietf=True))
