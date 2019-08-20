@@ -344,12 +344,6 @@ elif six.PY2:
   import __builtin__
 
 """
-    mod_rev = [
-        f"'{mod.arg}': {{'revision': '{mod.i_latest_revision}', 'namespace': '{mod.search_one('namespace').arg}', " +
-        f"'features': {ctx.features.get(mod.arg, list(mod.i_features.keys()))}, 'clazz': {safe_name(mod.arg)}}}"
-        for mod in modules]
-    module_library = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
-
     if ctx.opts.split_class_dir:
         ctx.pybind_split_basepath = os.path.abspath(ctx.opts.split_class_dir)
         if not os.path.exists(ctx.pybind_split_basepath):
@@ -361,10 +355,6 @@ elif six.PY2:
         for mod in modules:
             fd.write("from .%s import %s\n" % (safe_name(mod.arg), safe_name(mod.arg)))
         fd.write("\n")
-    fd.write(module_library)
-
-    if ctx.opts.split_class_dir:
-        fd.close()
 
     # Determine all modules, and submodules that are needed, along with the
     # prefix that is used for it. We need to ensure that we understand all of the
@@ -464,6 +454,20 @@ elif six.PY2:
                         path="/%s_notification" % (safe_name(module.arg)),
                         is_data_tree=False
                     )
+    mod_rev = [
+        f"'{mod.arg}': {{'revision': '{mod.i_latest_revision}', 'namespace': '{mod.search_one('namespace').arg}', " +
+        f"'features': {ctx.features.get(mod.arg, list(mod.i_features.keys()))}, " +
+        f"'clazz': {safe_name(mod.arg) if mod.arg in pyang_called_modules else 'None'}}}"
+        for prefix, mod in sorted(new_all_mods,
+                                  key=lambda prefix_and_mod:
+                                  (prefix_and_mod[1].arg not in pyang_called_modules, prefix_and_mod[1].arg))]
+
+    module_library = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
+    fd.write(module_library)
+
+    if ctx.opts.split_class_dir:
+        fd.close()
+
 
 
 def build_identities(ctx, defnd):
