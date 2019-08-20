@@ -601,7 +601,7 @@ def YANGListType(*args, **kwargs):
             try:
                 tmp = YANGDynClass(
                     base=self._contained_class,
-                    parent=parent,
+                    parent=self,
                     yang_name=yang_name,
                     is_container=is_container,
                     path_helper=False,
@@ -674,7 +674,7 @@ def YANGListType(*args, **kwargs):
                 try:
                     tmp = YANGDynClass(
                         base=self._contained_class,
-                        parent=parent,
+                        parent=self,
                         yang_name=yang_name,
                         is_container="container",
                         defining_module=self._defining_module,
@@ -716,7 +716,7 @@ def YANGListType(*args, **kwargs):
                     if not update:
                         tmp = YANGDynClass(
                             base=self._contained_class,
-                            parent=parent,
+                            parent=self,
                             yang_name=yang_name,
                             is_container="container",
                             defining_module=self._defining_module,
@@ -733,7 +733,7 @@ def YANGListType(*args, **kwargs):
                         tmp = YANGDynClass(
                             v,
                             base=self._contained_class,
-                            parent=parent,
+                            parent=self,
                             yang_name=yang_name,
                             is_container="container",
                             defining_module=self._defining_module,
@@ -761,7 +761,7 @@ def YANGListType(*args, **kwargs):
             else:
                 self._members[k] = YANGDynClass(
                     base=self._contained_class,
-                    parent=parent,
+                    parent=self,
                     yang_name=yang_name,
                     is_container=is_container,
                     defining_module=self._defining_module,
