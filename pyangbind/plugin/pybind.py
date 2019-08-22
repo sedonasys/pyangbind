@@ -1137,6 +1137,23 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 % (i["name"], i["name"], i["path"], i["origtype"], description_str, i["name"])
             )
 
+            # Adds getter mandatory info only to leaf arguments
+            if i['class'] not in {'container', 'notification', 'list', 'leaf-list'}:
+              nfd.write(
+                '''
+  @staticmethod
+  def _get_mandatory_%s() -> bool:
+    """
+    Getter method for %s mandatory info, mapped from YANG variable %s
+    """
+    return %s
+      '''
+                % (i["name"], i["name"], i["path"], i.get("mandatory", False))
+              )
+            else:
+              if i.get("mandatory"):
+                print(i)
+
             nfd.write(
                 '''
   def _set_%s(self, v, load=False):
@@ -1449,6 +1466,15 @@ def get_element(ctx, fd, element, module, parent, path, parent_cfg=True, choice=
     has_children = False
     create_list = False
 
+    # The "mandatory" statement, which is optional, takes as an argument
+    #    the string "true" or "false" and puts a constraint on valid data.
+    # If not specified, the default is "false".
+    elemmandatory = element.search_one("mandatory")
+    if elemmandatory is None or "false" == elemmandatory.arg:
+      elemmandatory = False
+    else:
+      elemmandatory = True
+
     elemdescr = element.search_one("description")
     if elemdescr is None:
         elemdescr = False
@@ -1521,6 +1547,7 @@ def get_element(ctx, fd, element, module, parent, path, parent_cfg=True, choice=
                 "defining_module": defining_module,
                 "extensions": extensions if len(extensions) else None,
                 "presence": has_presence,
+                "mandatory": elemmandatory
             }
 
             # Handle the different cases of class name, this depends on whether we
@@ -1733,6 +1760,7 @@ def get_element(ctx, fd, element, module, parent, path, parent_cfg=True, choice=
             "register_paths": register_paths,
             "namespace": namespace,
             "defining_module": defining_module,
+            "mandatory": elemmandatory
         }
         if len(extensions):
             elemdict["extensions"] = extensions
