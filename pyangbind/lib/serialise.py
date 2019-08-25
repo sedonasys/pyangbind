@@ -831,13 +831,13 @@ class pybindJSONDecoder(object):
                     change_tracker=change_tracker
                 )
             elif isinstance(d[key], list):
+                # if this is a list, then this is a YANG list
+                this_attr = getattr(obj, "_get_%s" % safe_name(ykey), None)
+                if this_attr is None:
+                    raise NonExistingPathError.from_obj(obj, (key,))
+                this_attr = this_attr()
+                pybindJSONDecoder._check_configurable(allow_non_config, this_attr)
                 for elem in d[key]:
-                    # if this is a list, then this is a YANG list
-                    this_attr = getattr(obj, "_get_%s" % safe_name(ykey), None)
-                    if this_attr is None:
-                        raise NonExistingPathError.from_obj(obj, (key,))
-                    this_attr = this_attr()
-                    pybindJSONDecoder._check_configurable(allow_non_config, this_attr)
                     if hasattr(this_attr, "_keyval"):
                         if overwrite:
                             existing_keys = this_attr.keys()
