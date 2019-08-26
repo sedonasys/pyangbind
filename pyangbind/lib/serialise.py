@@ -915,31 +915,36 @@ class pybindJSONDecoder(object):
                 else:
                     change_tracker.created(ChangeTrackerPath(chk))
                 pybindJSONDecoder._check_configurable(allow_non_config, chk)
+                val = d[key]
+                if chk._yang_type == "empty":
+                    # A 'none' value in the JSON means that an empty value is set,
+                    # since this is serialised as [null] in the input JSON.
+                    if val == [None]:
+                        val = True
+                    else:
+                        raise ValueError("Invalid value for empty in input JSON " "key: %s, got: %s" % (ykey, val))
+
+                if chk._yang_type == "identityref":
+                    # identityref values in IETF JSON may contain their module name, as a prefix,
+                    # but we don't build identities with these as valid values. If this is the
+                    # case then re-write the value to just be the name of the identity that we
+                    # should know about.
+                    if ":" in val:
+                        _, val = val.split(":", 1)
+
                 if chk._is_keyval is True:
-                    pass
-                else:
-                    val = d[key]
-                    if chk._yang_type == "empty":
-                        # A 'none' value in the JSON means that an empty value is set,
-                        # since this is serialised as [null] in the input JSON.
-                        if val == [None]:
-                            val = True
-                        else:
-                            raise ValueError("Invalid value for empty in input JSON " "key: %s, got: %s" % (ykey, val))
+                    get_method = getattr(obj, "_get_%s" % safe_name(ykey), None)
+                    if get_method is None:
+                        raise AttributeError("Invalid attribute specified in JSON - %s" % (ykey))
+                    cur_val = get_method()
+                    if cur_val != val:
+                        raise CannotChangeKeyOfListElement.from_obj(chk, cur_val, val)
+                elif val is not None:
+                    set_method = getattr(obj, "_set_%s" % safe_name(ykey), None)
+                    if set_method is None:
+                        raise AttributeError("Invalid attribute specified in JSON - %s" % (ykey))
+                    set_method(val)
 
-                    if chk._yang_type == "identityref":
-                        # identityref values in IETF JSON may contain their module name, as a prefix,
-                        # but we don't build identities with these as valid values. If this is the
-                        # case then re-write the value to just be the name of the identity that we
-                        # should know about.
-                        if ":" in val:
-                            _, val = val.split(":", 1)
-
-                    if val is not None:
-                        set_method = getattr(obj, "_set_%s" % safe_name(ykey), None)
-                        if set_method is None:
-                            raise AttributeError("Invalid attribute specified in JSON - %s" % (ykey))
-                        set_method(val)
                 pybindJSONDecoder.check_metadata_add(key, d, get_method())
         return obj
 
@@ -994,3 +999,15 @@ class MissingListKeyElement(ExceptionWithIETFPath):
     @classmethod
     def from_obj(cls, pybind_obj, missing_keys=tuple()):
         return cls(_ietf_path(pybind_obj), missing_keys)
+
+
+class CannotChangeKeyOfListElement(ExceptionWithIETFPath):
+    def __init__(self, path: str, cur_val: str, new_val: str):
+        super().__init__(path)
+        self.cur_val = cur_val
+        self.new_val = new_val
+
+    # noinspection PyMethodOverriding
+    @classmethod
+    def from_obj(cls, pybind_obj, cur_val:str, new_val: str):
+        return cls(_ietf_path(pybind_obj), cur_val, new_val)
