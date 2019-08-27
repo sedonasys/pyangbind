@@ -805,6 +805,13 @@ class pybindJSONDecoder(object):
                     continue
 
                 chobj = attr_get()
+                if not chobj._is_container:
+                    raise ValueError("dictionary supplied for non container")
+                if overwrite:
+                    for e in chobj.elements():
+                        if not getattr(chobj, e)._is_keyval:
+                            attr_unset = getattr(chobj, "_unset_" + e)
+                            attr_unset()
                 pybindJSONDecoder._check_configurable(allow_non_config, chobj)
                 if chobj._changed():
                     pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, chobj)
