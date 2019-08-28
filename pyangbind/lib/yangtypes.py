@@ -441,40 +441,47 @@ def TypedListType(*args, **kwargs):
 
             passed = False
             count = 0
+            path_keystring = "[.='%s']" % v
+
+            def dyn_wrapper(base):
+                return YANGDynClass(
+                  v,
+                  base=base,
+                  yang_name=self._yang_name,
+                  parent=self,
+                  is_leaf=True,
+                  path_helper=self._path_helper,
+                  extmethods=self._extmethods,
+                  register_paths=self._register_paths,
+                  yang_type=self._yang_type,
+                  namespace=self._namespace,
+                  defining_module=self._defining_module,
+                  register_path=(self._parent._path() + [self._yang_name + path_keystring]),
+                  register_path_ietf=(self._parent._path(True) + [yname_ns_func(self) + path_keystring]),
+                  is_config=self._is_config
+                )
             for i in self._allowed_type:
                 if isinstance(v, i):
-                    tmp = v
+                    tmp = dyn_wrapper(i)
                     passed = True
                     break
                 try:
                     if hasattr(i, "_pybind_generated_by"):
                         attr = getattr(i, "_pybind_generated_by")
                         if attr == "RestrictedClassType":
-                            tmp = YANGDynClass(v,
-                                               base=i,
-                                               yang_name=self._yang_name,
-                                               parent=self,
-                                               is_leaf=True,
-                                               path_helper=self._path_helper,
-                                               extmethods=self._extmethods,
-                                               register_paths=self._register_paths,
-                                               yang_type=self._yang_type,
-                                               namespace=self._namespace,
-                                               defining_module=self._defining_module,
-                                               is_config=self._is_config
-                                               )
+                            tmp = dyn_wrapper(i)
                             passed = True
                             break
                         elif attr == "ReferencePathType":
-                            tmp = i(v)
+                            tmp = dyn_wrapper(i)
                             passed = True
                             break
                         elif attr == "RestrictedPrecisionDecimal":
-                            tmp = i(v)
+                            tmp = dyn_wrapper(i)
                             passed = True
                             break
                     elif i == six.text_type and isinstance(v, six.string_types + (six.text_type,)):
-                        tmp = six.text_type(v)
+                        tmp = dyn_wrapper(i)  # tmp = six.text_type(v)
                         passed = True
                         break
                     elif i not in six.string_types + (six.text_type,):
