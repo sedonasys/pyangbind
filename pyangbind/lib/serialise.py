@@ -33,7 +33,7 @@ import six
 from enum import IntEnum
 from lxml import objectify, etree
 
-from pyangbind.lib.yangtypes import YANGBool, safe_name
+from pyangbind.lib.yangtypes import YANGBool, safe_name, is_yang_leaflist
 
 
 if six.PY3:
@@ -951,6 +951,10 @@ class pybindJSONDecoder(object):
                     if set_method is None:
                         raise AttributeError("Invalid attribute specified in JSON - %s" % (ykey))
                     set_method(val)
+                    if is_yang_leaflist(chk):
+                        get_method = getattr(obj, "_get_%s" % safe_name(ykey))
+                        for el in get_method():
+                            change_tracker.created(ChangeTrackerPath(el))
 
                 pybindJSONDecoder.check_metadata_add(key, d, get_method())
         return obj
