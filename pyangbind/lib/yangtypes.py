@@ -23,12 +23,17 @@ from __future__ import unicode_literals
 
 import collections
 import copy
+import functools
 import uuid
 from decimal import Decimal
 
 import regex
 import six
+import json
 from bitarray import bitarray
+
+
+LRU_CACHE_SIZE = 500000  # actual cache size is bounded and should be much smaller
 
 # Words that could turn up in YANG definition files that are actually
 # reserved names in Python, such as being builtin types. This list is
@@ -129,13 +134,12 @@ def safe_name(arg):
     return arg
 
 
-def RestrictedPrecisionDecimalType(*args, **kwargs):
+@functools.lru_cache(LRU_CACHE_SIZE)
+def RestrictedPrecisionDecimalType(precision=False):
     """
     Function to return a new type that is based on decimal.Decimal with
     an arbitrary restricted precision.
   """
-    precision = kwargs.pop("precision", False)
-
     class RestrictedPrecisionDecimal(Decimal):
         """
       Class extending decimal.Decimal to restrict the precision that is
@@ -162,21 +166,32 @@ def RestrictedPrecisionDecimalType(*args, **kwargs):
             obj = Decimal.__new__(self, value, **kwargs)
             return obj
 
-    return type(RestrictedPrecisionDecimal(*args, **kwargs))
+    return RestrictedPrecisionDecimal
 
 
-def RestrictedClassType(*args, **kwargs):
+def RestrictedClassType(
+        *, base_type=six.text_type, restriction_type=None, restriction_arg=None, restriction_dict=None, int_size=None):
+    if restriction_dict is not None:
+        restriction_dict = json.dumps(restriction_dict)
+    if restriction_arg is not None:
+        restriction_arg = json.dumps(restriction_arg)
+    return RestrictedClassType__inner(
+        base_type=base_type, restriction_type=restriction_type, restriction_arg=restriction_arg,
+        restriction_dict=restriction_dict, int_size=int_size)
+
+
+@functools.lru_cache(LRU_CACHE_SIZE)
+def RestrictedClassType__inner(*, base_type, restriction_type, restriction_arg, restriction_dict, int_size):
     """
     Function to return a new type that restricts an arbitrary base_type with
     a specified restriction. The restriction_type specified determines the
     type of restriction placed on the class, and the restriction_arg gives
     any input data that this function needs.
   """
-    base_type = kwargs.pop("base_type", six.text_type)
-    restriction_type = kwargs.pop("restriction_type", None)
-    restriction_arg = kwargs.pop("restriction_arg", None)
-    restriction_dict = kwargs.pop("restriction_dict", None)
-    int_size = kwargs.pop("int_size", None)
+    if restriction_dict is not None:
+        restriction_dict = json.loads(restriction_dict)
+    if restriction_arg is not None:
+        restriction_arg = json.loads(restriction_arg)
 
     # this gives deserialisers some hints as to how to encode/decode this value
     # it must be a list since a restricted class can encapsulate a restricted
@@ -211,7 +226,7 @@ def RestrictedClassType(*args, **kwargs):
                 pass
             try:
                 super(RestrictedClass, self).__init__(*args, **kwargs)
-            except TypeError:
+            except TypeError as e:
                 super(RestrictedClass, self).__init__()
 
         def __new__(self, *args, **kwargs):
@@ -402,18 +417,24 @@ def RestrictedClassType(*args, **kwargs):
                     return self._enumeration_dict[self.__str__()]["value"]
             return self
 
-    return type(RestrictedClass(*args, **kwargs))
+    return RestrictedClass
 
 
-def TypedListType(*args, **kwargs):
+def TypedListType(allowed_type=six.text_type):
+    if isinstance(allowed_type, list):
+        allowed_type = tuple(allowed_type)
+    return TypedListType__inner(allowed_type)
+
+
+@functools.lru_cache(LRU_CACHE_SIZE)
+def TypedListType__inner(allowed_type):
     """
     Return a type that consists of a list object where only
     certain types (specified by allowed_type kwarg to the function)
     can be added to the list.
   """
-    allowed_type = kwargs.pop("allowed_type", six.text_type)
-    if not isinstance(allowed_type, list):
-        allowed_type = [allowed_type]
+    if not isinstance(allowed_type, tuple):
+        allowed_type = (allowed_type,)
 
     class TypedList(collections.MutableSequence):
         _pybind_generated_by = "TypedListType"
@@ -492,7 +513,7 @@ def TypedListType(*args, **kwargs):
                         tmp = i(v)
                         passed = True
                         break
-                except Exception:
+                except Exception as e:
                     # we catch all exceptions because we duck-type as
                     # much as possible and some types - e.g., decimal do
                     # not use builtins.
@@ -538,7 +559,7 @@ def TypedListType(*args, **kwargs):
         def get(self, filter=False):
             return self._list
 
-    return type(TypedList(*args, **kwargs))
+    return TypedList
 
 
 def yname_ns_func(element):
@@ -550,7 +571,18 @@ def yname_ns_func(element):
         return element._yang_name
 
 
-def YANGListType(*args, **kwargs):
+def YANGListType(
+        keyname, listclass, *, is_container=False, yang_name=False, yang_keys=False, user_ordered=False,
+        # these params are passed twice by the code generator - here and in the YangDynClass Wrapper
+        path_helper=None, extensions=None,
+        # these params are passed by the code generator, but not used here
+        parent=False, choice=None):
+    return YANGListType__inner(keyname, listclass, is_container=is_container, yang_name=yang_name, yang_keys=yang_keys,
+                               user_ordered=user_ordered)
+
+@functools.lru_cache(LRU_CACHE_SIZE)
+def YANGListType__inner(
+        keyname, listclass, *, is_container, yang_name, yang_keys, user_ordered):
     """
     Return a type representing a YANG list, with a contained class.
     An ordered dict is used to store the list, and the
@@ -566,24 +598,12 @@ def YANGListType(*args, **kwargs):
     case for 'config false' lists - a uuid is generated and used
     as the key for the list.
   """
-    try:
-        keyname = args[0]
-        listclass = args[1]
-    except Exception:
-        raise TypeError("A YANGList must be specified with a key value and a " + "contained class")
-    is_container = kwargs.pop("is_container", False)
-    parent = kwargs.pop("parent", False)
-    yang_name = kwargs.pop("yang_name", False)
-    yang_keys = kwargs.pop("yang_keys", False)
-    user_ordered = kwargs.pop("user_ordered", False)
-    path_helper = kwargs.pop("path_helper", None)
-    extensions = kwargs.pop("extensions", None)
 
     class YANGList(object):
         __slots__ = ("_members", "_keyval", "_contained_class", "_path_helper", "_yang_keys", "_ordered")
         _pybind_generated_by = "YANGListType"
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self):
             self._ordered = True if user_ordered else False
             self._members = collections.OrderedDict()
 
@@ -593,7 +613,7 @@ def YANGListType(*args, **kwargs):
             if not type(listclass) == type(int):
                 raise ValueError("contained class of a YANGList must be a class")
             self._contained_class = listclass
-            self._path_helper = path_helper
+            # self._path_helper = path_helper   # no need - shadowed by YangDynClass
             self._yang_keys = yang_keys
 
         def __str__(self):
@@ -728,11 +748,11 @@ def YANGListType(*args, **kwargs):
                             is_container="container",
                             defining_module=self._defining_module,
                             namespace=self._namespace,
-                            path_helper=path_helper,
+                            path_helper=self._path_helper,
                             register_path=(self._parent._path() + [self._yang_name + path_keystring]),
                             register_path_ietf=(self._parent._path(True) + [yname_ns_func(self) + path_keystring]),
                             extmethods=self._parent._extmethods,
-                            extensions=extensions,
+                            extensions=self._extensionsd,
                         )
                     else:
                         # hand the value to the init, rather than simply creating an empty
@@ -745,12 +765,12 @@ def YANGListType(*args, **kwargs):
                             is_container="container",
                             defining_module=self._defining_module,
                             namespace=self._namespace,
-                            path_helper=path_helper,
+                            path_helper=self._path_helper,
                             register_path=(self._parent._path() + [self._yang_name + path_keystring]),
                             register_path_ietf=(self._parent._path(True) + [yname_ns_func(self) + path_keystring]),
                             extmethods=self._parent._extmethods,
                             load=True,
-                            extensions=extensions,
+                            extensions=self._extensionsd,
                         )
 
                     if keydict is not None:
@@ -773,9 +793,9 @@ def YANGListType(*args, **kwargs):
                     is_container=is_container,
                     defining_module=self._defining_module,
                     namespace=self._namespace,
-                    path_helper=path_helper,
+                    path_helper=self._path_helper,
                     extmethods=self._parent._extmethods,
-                    extensions=extensions,
+                    extensions=self._extensionsd,
                 )
                 return k
 
@@ -914,7 +934,7 @@ def YANGListType(*args, **kwargs):
                     d[i] = self._members[i]
             return d
 
-    return type(YANGList(*args, **kwargs))
+    return YANGList
 
 
 class YANGBool(int):
@@ -945,7 +965,36 @@ class YANGBool(int):
         return str(self.__repr__())
 
 
-def YANGDynClass(*args, **kwargs):
+def YANGDynClass(*args, base, **kwargs):
+    if isinstance(base, list):
+        # this is a union, we must infer type
+        if not len(args):
+            # there is no argument to infer the type from
+            # so use the first type (default)
+            base = base[0]
+        else:
+            type_test = False
+            for candidate_type in base:
+                try:
+                    type_test = candidate_type(args[0])  # does the slipper fit?
+                    # hop, skip and jump with the last candidate
+                    base = candidate_type
+                    break
+                except Exception:
+                    pass  # don't worry, move on, plenty more fish (types) in the sea...
+            if type_test is False:
+                # we're left alone at midnight -- no types fit the arguments
+                raise TypeError("did not find a valid type using the argument as a hint")
+
+    is_container = kwargs.pop("is_container", False)
+    yang_type = kwargs.pop("yang_type", None)
+
+    clazz = YANGDynClass__inner(base_type=base, is_container=is_container, yang_type=yang_type)
+    return clazz(*args, **kwargs)
+
+
+@functools.lru_cache(LRU_CACHE_SIZE)
+def YANGDynClass__inner(base_type, is_container, yang_type):
     """
     Wrap an type - specified in the base_type arugment - with
     a set of custom attributes that YANG specifies (or are required
@@ -973,49 +1022,6 @@ def YANGDynClass(*args, **kwargs):
       - presence:    Whether the YANG container that is being
                      represented has the presence keyword
   """
-    base_type = kwargs.pop("base", False)
-    default = kwargs.pop("default", False)
-    yang_name = kwargs.pop("yang_name", False)
-    parent_instance = kwargs.pop("parent", False)
-    choice_member = kwargs.pop("choice", False)
-    is_container = kwargs.pop("is_container", False)
-    is_leaf = kwargs.pop("is_leaf", False)
-    path_helper = kwargs.pop("path_helper", None)
-    supplied_register_path = kwargs.pop("register_path", None)
-    supplied_register_path_ietf = kwargs.pop("register_path_ietf", None)
-    extensions = kwargs.pop("extensions", None)
-    extmethods = kwargs.pop("extmethods", None)
-    is_keyval = kwargs.pop("is_keyval", False)
-    register_paths = kwargs.pop("register_paths", True)
-    yang_type = kwargs.pop("yang_type", None)
-    namespace = kwargs.pop("namespace", None)
-    defining_module = kwargs.pop("defining_module", None)
-    load = kwargs.pop("load", None)
-    is_config = kwargs.pop("is_config", True)
-    has_presence = kwargs.pop("presence", None)
-
-    if not base_type:
-        raise TypeError("must have a base type")
-
-    if isinstance(base_type, list):
-        # this is a union, we must infer type
-        if not len(args):
-            # there is no argument to infer the type from
-            # so use the first type (default)
-            base_type = base_type[0]
-        else:
-            type_test = False
-            for candidate_type in base_type:
-                try:
-                    type_test = candidate_type(args[0])  # does the slipper fit?
-                    break
-                except Exception:
-                    pass  # don't worry, move on, plenty more fish (types) in the sea...
-            if type_test is False:
-                # we're left alone at midnight -- no types fit the arguments
-                raise TypeError("did not find a valid type using the argument as a" + " hint")
-            # otherwise, hop, skip and jump with the last candidate
-            base_type = candidate_type
 
     clsslots = [
         "_default",
@@ -1042,18 +1048,18 @@ def YANGDynClass(*args, **kwargs):
         "_presence",
     ]
 
-    if extmethods:
-        rpath = None
-        if supplied_register_path is not None:
-            rpath = supplied_register_path
-        if parent_instance is not None:
-            rpath = parent_instance._path() + [yang_name]
-        else:
-            rpath = []
-        chk_path = "/" + "/".join(remove_path_attributes(rpath))
-        if chk_path in extmethods:
-            for method in [i for i in dir(extmethods[chk_path]) if not i.startswith("_")]:
-                clsslots.append("_" + method)
+    # if extmethods:
+    #     rpath = None
+    #     if supplied_register_path is not None:
+    #         rpath = supplied_register_path
+    #     if parent_instance is not None:
+    #         rpath = parent_instance._path() + [yang_name]
+    #     else:
+    #         rpath = []
+    #     chk_path = "/" + "/".join(remove_path_attributes(rpath))
+    #     if chk_path in extmethods:
+    #         for method in [i for i in dir(extmethods[chk_path]) if not i.startswith("_")]:
+    #             clsslots.append("_" + method)
 
     class YANGBaseClass(base_type):
         # we only create slots for things that are restricted
@@ -1070,12 +1076,35 @@ def YANGDynClass(*args, **kwargs):
 
         def __new__(self, *args, **kwargs):
             try:
+                kwargs = {k: v for k, v in kwargs.items()
+                          if k not in {"default", "yang_name", "parent", "choice", "is_leaf", "path_helper",
+                                       "register_path", "register_path_ietf", "extensions", "extmethods", "is_keyval",
+                                       "register_paths", "namespace", "defining_module", "load", "is_config",
+                                       "presence"}}
                 obj = base_type.__new__(self, *args, **kwargs)
             except TypeError:
                 obj = base_type.__new__(self)
             return obj
 
         def __init__(self, *args, **kwargs):
+            default = kwargs.pop("default", False)
+            yang_name = kwargs.pop("yang_name", False)
+            parent_instance = kwargs.pop("parent", False)
+            choice_member = kwargs.pop("choice", False)
+            is_leaf = kwargs.pop("is_leaf", False)
+            path_helper = kwargs.pop("path_helper", None)
+            supplied_register_path = kwargs.pop("register_path", None)
+            supplied_register_path_ietf = kwargs.pop("register_path_ietf", None)
+            extensions = kwargs.pop("extensions", None)
+            extmethods = kwargs.pop("extmethods", None)
+            is_keyval = kwargs.pop("is_keyval", False)
+            register_paths = kwargs.pop("register_paths", True)
+            namespace = kwargs.pop("namespace", None)
+            defining_module = kwargs.pop("defining_module", None)
+            load = kwargs.pop("load", None)
+            is_config = kwargs.pop("is_config", True)
+            has_presence = kwargs.pop("presence", None)
+
             self._default = False
             self._mchanged = False
             self._yang_name = yang_name
@@ -1136,8 +1165,6 @@ def YANGDynClass(*args, **kwargs):
                 super(YANGBaseClass, self).__init__(*args, **kwargs)
             except TypeError:
                 super(YANGBaseClass, self).__init__()
-            except Exception:
-                six.reraise()
 
         def _changed(self):
             return self._mchanged
@@ -1267,10 +1294,18 @@ def YANGDynClass(*args, **kwargs):
 
             return self._cpresent
 
-    return YANGBaseClass(*args, **kwargs)
+    return YANGBaseClass
 
 
-def ReferenceType(*args, **kwargs):
+def ReferenceType(*, referenced_path, path_helper, caller, require_instance):
+    # 'caller' is based on current tree path and therefore very bad of lru-cache, on the other hand - it is very
+    # easily computed based on the parent path and the current segment yang name so we can just ignore it
+    # 'path_helper' is passed twice by the code generator - here and in the YangDynClass Wrapper
+    return ReferenceType__inner(referenced_path=referenced_path, require_instance=require_instance)
+
+
+@functools.lru_cache(LRU_CACHE_SIZE)
+def ReferenceType__inner(*, referenced_path, require_instance):
     """
     A type which based on a path provided acts as a leafref.
     The caller argument is used to allow the path that is provided
@@ -1278,10 +1313,6 @@ def ReferenceType(*args, **kwargs):
     argument specifies whether errors should be thrown in the case
     that the referenced instance does not exist.
   """
-    ref_path = kwargs.pop("referenced_path", False)
-    path_helper = kwargs.pop("path_helper", None)
-    caller = kwargs.pop("caller", False)
-    require_instance = kwargs.pop("require_instance", False)
 
     class ReferencePathType(object):
 
@@ -1299,10 +1330,10 @@ def ReferenceType(*args, **kwargs):
         _pybind_generated_by = "ReferencePathType"
 
         def __init__(self, *args, **kwargs):
-            self._referenced_path = ref_path
-            self._path_helper = path_helper
+            self._referenced_path = referenced_path
+            # self._path_helper = path_helper
             self._referenced_object = False
-            self._caller = caller
+            self._caller = self._parent._path() + [self._yang_name]
             self._ptr = False
             self._require_instance = require_instance
             self._type = "unicode"
@@ -1398,4 +1429,4 @@ def ReferenceType(*args, **kwargs):
                 return str(self._referenced_object)
             return str(self._get_ptr())
 
-    return type(ReferencePathType(*args, **kwargs))
+    return ReferencePathType
