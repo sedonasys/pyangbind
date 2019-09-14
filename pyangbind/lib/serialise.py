@@ -585,7 +585,10 @@ class ChangeTracker(object):
     def created(self, path: ChangeTrackerPath):
         pass
 
-    def updated(self, path: ChangeTrackerPath):
+    def replaced(self, path: ChangeTrackerPath):
+        pass
+
+    def merged(self, path: ChangeTrackerPath):
         pass
 
     def deleted(self, path: ChangeTrackerPath):
@@ -769,7 +772,7 @@ class pybindJSONDecoder(object):
             pybindJSONDecoder._check_configurable(allow_non_config, obj)
             if obj._changed():
                 pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, obj)
-                change_tracker.updated(ChangeTrackerPath(obj))
+                change_tracker.replaced(ChangeTrackerPath(obj))
             else:
                 change_tracker.created(ChangeTrackerPath(obj))
             set_method = getattr(obj._parent, "_set_%s" % safe_name(obj._yang_name))
@@ -807,15 +810,17 @@ class pybindJSONDecoder(object):
                 chobj = attr_get()
                 if not chobj._is_container:
                     raise ValueError("dictionary supplied for non container")
-                if overwrite:
-                    for e in chobj.elements():
-                        if not getattr(chobj, e)._is_keyval:
-                            attr_unset = getattr(chobj, "_unset_" + e)
-                            attr_unset()
                 pybindJSONDecoder._check_configurable(allow_non_config, chobj)
                 if chobj._changed():
                     pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, chobj)
-                    change_tracker.updated(ChangeTrackerPath(chobj))
+                    if overwrite:
+                        for e in chobj.elements():
+                            if not getattr(chobj, e)._is_keyval:
+                                attr_unset = getattr(chobj, "_unset_" + e)
+                                attr_unset()
+                        change_tracker.replaced(ChangeTrackerPath(chobj))
+                    else:
+                        change_tracker.merged(ChangeTrackerPath(chobj))
                 else:
                     change_tracker.created(ChangeTrackerPath(chobj))
 
@@ -844,13 +849,16 @@ class pybindJSONDecoder(object):
                     raise NonExistingPathError.from_obj(obj, (key,))
                 this_attr = this_attr()
                 pybindJSONDecoder._check_configurable(allow_non_config, this_attr)
+                if hasattr(this_attr, "_keyval"):
+                    if overwrite:
+                        existing_keys = list(this_attr.keys())
+                        for i in existing_keys:
+                            this_attr.delete(i)
+                        change_tracker.replaced(ChangeTrackerPath(this_attr))
+                    else:
+                        change_tracker.merged(ChangeTrackerPath(this_attr))
                 for elem in d[key]:
                     if hasattr(this_attr, "_keyval"):
-                        if overwrite:
-                            existing_keys = this_attr.keys()
-                            for i in existing_keys:
-                                this_attr.delete(i)
-                            change_tracker.created(ChangeTrackerPath(this_attr))
                         #  this handles YANGLists
                         if this_attr._keyval is False:
                             # Keyless list, generate a key
@@ -870,9 +878,15 @@ class pybindJSONDecoder(object):
                                     # delete key from elem or else we will fail because key will exist on the new obj
                                     elem = {k: v for k, v in elem.items() if k not in kwargs}
                                 change_tracker.created(ChangeTrackerPath(nobj))
+                                for ykv in this_attr._yang_keys.split(" "):
+                                    change_tracker.created(ChangeTrackerPath(getattr(nobj, safe_name(ykv))))
                             else:
                                 nobj = this_attr[keystr]
                                 pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
+                                if overwrite:
+                                    change_tracker.replaced(ChangeTrackerPath(nobj))
+                                else:
+                                    change_tracker.merged(ChangeTrackerPath(nobj))
                             if not allow_non_config:
                                 for pkv in kwargs.keys():
                                   pybindJSONDecoder._check_configurable(allow_non_config, getattr(nobj, pkv))
@@ -885,9 +899,15 @@ class pybindJSONDecoder(object):
                                     # delete key from elem or else we will fail because key will exist on the new obj
                                     elem = {k: v for k, v in elem.items() if k != this_attr._yang_keys}
                                 change_tracker.created(ChangeTrackerPath(nobj))
+                                change_tracker.created(ChangeTrackerPath(
+                                    getattr(nobj, safe_name(this_attr._yang_keys))))
                             else:
                                 nobj = this_attr[k]
                                 pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
+                                if overwrite:
+                                    change_tracker.replaced(ChangeTrackerPath(nobj))
+                                else:
+                                    change_tracker.merged(ChangeTrackerPath(nobj))
                             pybindJSONDecoder._check_configurable(allow_non_config, getattr(nobj, this_attr._keyval))
                         pybindJSONDecoder.load_ietf_json(
                             elem,
@@ -916,11 +936,22 @@ class pybindJSONDecoder(object):
                 elif get_method is None and skip_unknown is not False:
                     continue
                 chk = get_method()
-                if chk._changed():  # TODO: is this the right place ?
+
+                # TODO: is this the right place ?
+                if chk._changed():
                     pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, chk)
-                    change_tracker.updated(ChangeTrackerPath(chk))
-                else:
-                    change_tracker.created(ChangeTrackerPath(chk))
+
+                # TODO: is this the right place ?
+                objp = getattr(obj, "_parent", None)
+                if not objp or ykey not in getattr(objp, "_yang_keys", "").split(" "):
+                    if chk._changed():
+                        if is_yang_leaflist(chk) and not overwrite:
+                            change_tracker.merged(ChangeTrackerPath(chk))
+                        else:
+                            change_tracker.replaced(ChangeTrackerPath(chk))
+                    else:
+                        change_tracker.created(ChangeTrackerPath(chk))
+
                 pybindJSONDecoder._check_configurable(allow_non_config, chk)
                 val = d[key]
                 if chk._yang_type == "empty":
@@ -950,11 +981,20 @@ class pybindJSONDecoder(object):
                     set_method = getattr(obj, "_set_%s" % safe_name(ykey), None)
                     if set_method is None:
                         raise AttributeError("Invalid attribute specified in JSON - %s" % (ykey))
-                    set_method(val)
-                    if is_yang_leaflist(chk):
-                        get_method = getattr(obj, "_get_%s" % safe_name(ykey))
-                        for el in get_method():
-                            change_tracker.created(ChangeTrackerPath(el))
+                    if is_yang_leaflist(chk) and not overwrite:
+                        for el in val:
+                            old_len = len(chk)
+                            chk.append(el)
+                            if len(chk) != old_len:
+                                change_tracker.created(ChangeTrackerPath(chk[-1]))
+                            else:
+                                change_tracker.replaced(ChangeTrackerPath(chk[-1]))
+                    else:
+                        set_method(val)
+                        if is_yang_leaflist(chk):
+                            get_method = getattr(obj, "_get_%s" % safe_name(ykey))
+                            for el in get_method():
+                                change_tracker.created(ChangeTrackerPath(el))
 
                 pybindJSONDecoder.check_metadata_add(key, d, get_method())
         return obj
