@@ -885,8 +885,12 @@ class pybindJSONDecoder(object):
                                 pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
                                 if overwrite:
                                     change_tracker.replaced(ChangeTrackerPath(nobj))
+                                    for ykv in this_attr._yang_keys.split(" "):
+                                        change_tracker.created(ChangeTrackerPath(getattr(nobj, safe_name(ykv))))
                                 else:
                                     change_tracker.merged(ChangeTrackerPath(nobj))
+                                    for ykv in this_attr._yang_keys.split(" "):
+                                        change_tracker.replaced(ChangeTrackerPath(getattr(nobj, safe_name(ykv))))
                             if not allow_non_config:
                                 for pkv in kwargs.keys():
                                   pybindJSONDecoder._check_configurable(allow_non_config, getattr(nobj, pkv))
@@ -906,8 +910,12 @@ class pybindJSONDecoder(object):
                                 pybindJSONDecoder._check_fail_if_value_exists(fail_if_value_exist, nobj)
                                 if overwrite:
                                     change_tracker.replaced(ChangeTrackerPath(nobj))
+                                    change_tracker.created(ChangeTrackerPath(
+                                        getattr(nobj, safe_name(this_attr._yang_keys))))
                                 else:
                                     change_tracker.merged(ChangeTrackerPath(nobj))
+                                    change_tracker.replaced(ChangeTrackerPath(
+                                        getattr(nobj, safe_name(this_attr._yang_keys))))
                             pybindJSONDecoder._check_configurable(allow_non_config, getattr(nobj, this_attr._keyval))
                         pybindJSONDecoder.load_ietf_json(
                             elem,
