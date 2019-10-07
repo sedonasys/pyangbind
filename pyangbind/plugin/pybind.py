@@ -677,9 +677,8 @@ def build_typedefs(ctx, defnd):
         class_map[type_name.split(":")[1]] = class_map[type_name]
 
 
-def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=True, choice=False, register_paths=True,
+def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=True, register_paths=True,
                  is_data_tree=True):
-
     # Iterative function that is called for all elements that have childen
     # data nodes in the tree. This function resolves those nodes into the
     # relevant leaf, or container/list configuration and outputs the python
@@ -756,28 +755,32 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
     if ctx.opts.split_class_dir:
         import_req = []
 
+    def handle_choice(choice_node, choices):
+        for choice_ch in choice_node.i_children:
+            cur_choices = choices + [(choice_node.arg, choice_ch.arg)]
+            # these are case statements
+            for case_ch in choice_ch.i_children:
+                if case_ch.keyword == "choice":
+                    handle_choice(case_ch, cur_choices)
+                    continue
+                elements.extend(get_element(
+                    ctx,
+                    fd,
+                    case_ch,
+                    module,
+                    parent,
+                    path + "/" + case_ch.arg,
+                    parent_cfg=parent_cfg,
+                    choice=cur_choices,
+                    register_paths=register_paths,
+                ))
+                if ctx.opts.split_class_dir:
+                    if hasattr(case_ch, "i_children") and len(case_ch.i_children):
+                        import_req.append(case_ch.arg)
+
     for ch in i_children:
-        children_tmp = getattr(ch, "i_children", None)
-        if children_tmp is not None:
-            children_tmp = [i.arg for i in children_tmp]
         if ch.keyword == "choice":
-            for choice_ch in ch.i_children:
-                # these are case statements
-                for case_ch in choice_ch.i_children:
-                    elements += get_element(
-                        ctx,
-                        fd,
-                        case_ch,
-                        module,
-                        parent,
-                        path + "/" + case_ch.arg,
-                        parent_cfg=parent_cfg,
-                        choice=(ch.arg, choice_ch.arg),
-                        register_paths=register_paths,
-                    )
-                    if ctx.opts.split_class_dir:
-                        if hasattr(case_ch, "i_children") and len(case_ch.i_children):
-                            import_req.append(case_ch.arg)
+            handle_choice(ch, [])
         else:
             elements += get_element(
                 ctx,
@@ -787,7 +790,6 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 parent,
                 path + "/" + ch.arg,
                 parent_cfg=parent_cfg,
-                choice=choice,
                 register_paths=register_paths,
             )
 
@@ -892,7 +894,6 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
         nfd.write("  _yang_namespace = '%s'\n" % (mod_location.search("namespace")[0].arg))
 
         choices = {}
-        choice_attrs = []
         classes = {}
         for i in elements:
             # Loop through the elements and build a string that corresponds to the
@@ -935,8 +936,6 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 class_str["arg"] += ", path_helper=self._path_helper"
                 class_str["arg"] += ", yang_keys='%s'" % i["yang_keys"]
                 class_str["arg"] += ", extensions=%s" % i["extensions"]
-                if i["choice"]:
-                    class_str["arg"] += ", choice=%s" % repr(choice)
                 class_str["arg"] += ")"
             elif i["class"] == "union" or i["class"] == "leaf-union":
                 # A special mapped type where there is a union that just includes
@@ -1006,13 +1005,15 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 class_str["arg"] += ', yang_name="%s"' % i["yang_name"]
                 class_str["arg"] += ", parent=self"
                 if i["choice"]:
-                    class_str["arg"] += ", choice=%s" % repr(i["choice"])
-                    choice_attrs.append(i["name"])
-                    if not i["choice"][0] in choices:
-                        choices[i["choice"][0]] = {}
-                    if not i["choice"][1] in choices[i["choice"][0]]:
-                        choices[i["choice"][0]][i["choice"][1]] = []
-                    choices[i["choice"][0]][i["choice"][1]].append(i["name"])
+                    choices_tuple = tuple(choice for choice, case in i["choice"])
+                    cases_tuple = tuple(case for choice, case in i["choice"])
+                    class_str["arg"] += ", choice=%s" % repr((choices_tuple, cases_tuple))
+                    accum_choices = []
+                    accum_cases = []
+                    for level_choice, level_case in zip(choices_tuple, cases_tuple):
+                      accum_choices.append(level_choice)
+                      accum_cases.append(level_case)
+                      choices.setdefault(tuple(accum_choices), {}).setdefault(tuple(accum_cases), []).append(i["name"])
                 class_str["arg"] += ", path_helper=self._path_helper"
                 class_str["arg"] += ", extmethods=self._extmethods"
                 class_str["arg"] += ", register_paths=%s" % i["register_paths"]
@@ -1119,6 +1120,13 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             % path.split("/")[2 if is_data_tree else 1:]
         )
 
+        if len(path.split("/")) <= 2:
+            nfd.write(
+                """
+  def _set(self, choice):
+      return\n"""
+            )
+
         # For each element, write out a getter and setter method - with the doc
         # string of the element within the model.
         for i in elements:
@@ -1216,8 +1224,9 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             nfd.write(
                 """
   def _unset_%s(self):
-    self.__%s = %s(%s)\n\n"""
-                % (i["name"], i["name"], c_str["type"], c_str["arg"])
+    if self.__%s._changed():
+      self.__%s = %s(%s)\n\n"""
+                % (i["name"], i["name"], i["name"], c_str["type"], c_str["arg"])
             )
 
         # When an element is read-only, write out the _set and _get methods, but
@@ -1527,7 +1536,6 @@ def get_element(ctx, fd, element, module, parent, path, parent_cfg=True, choice=
                 element,
                 npath,
                 parent_cfg=parent_cfg,
-                choice=choice,
                 register_paths=register_paths,
             )
 

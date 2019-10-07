@@ -576,7 +576,7 @@ def YANGListType(
         # these params are passed twice by the code generator - here and in the YangDynClass Wrapper
         path_helper=None, extensions=None,
         # these params are passed by the code generator, but not used here
-        parent=False, choice=None):
+        parent=False):
     return YANGListType__inner(keyname, listclass, is_container=is_container, yang_name=yang_name, yang_keys=yang_keys,
                                user_ordered=user_ordered)
 
@@ -1178,28 +1178,28 @@ def YANGDynClass__inner(base_type, is_container, yang_type):
             return super(YANGBaseClass, self).__repr__()
 
         def _set(self, choice=False):
-            if hasattr(self, "__choices__") and choice:
-                for ch in self.__choices__:
-                    if ch == choice[0]:
-                        for case in self.__choices__[ch]:
-                            if not case == choice[1]:
-                                for elem in self.__choices__[ch][case]:
-                                    method = "_unset_%s" % elem
-                                    if not hasattr(self, method):
-                                        raise AttributeError("unmapped choice!")
-                                    x = getattr(self, method)
-                                    x()
+            if choice:
+                nested_choices, nested_cases_in_use = choice
+                for nesting_level in reversed(range(1, 1 + len(nested_choices))):
+                    used_cases_for_nesting_level = nested_cases_in_use[:nesting_level]
+                    for cases, fields in self.__choices__[nested_choices[:nesting_level]].items():
+                        if cases == used_cases_for_nesting_level:
+                            continue
 
-            if self._choice and not choice:
-                choice = self._choice
+                        for elem in fields:
+                            method = "_unset_%s" % elem
+                            if not hasattr(self, method):
+                                raise AttributeError("unmapped choice!")
+                            x = getattr(self, method)
+                            x()
 
             self._mchanged = True
 
             if self._presence:
                 self._cpresent = True
 
-            if self._parent and hasattr(self._parent, "_set"):
-                self._parent._set(choice=choice)
+            if self._parent: # and hasattr(self._parent, "_set"):    # parent MUST have a '_set'
+                self._parent._set(choice=self._choice)
 
         def _add_metadata(self, k, v):
             self._metadata[k] = v
