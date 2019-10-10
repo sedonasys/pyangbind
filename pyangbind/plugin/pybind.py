@@ -1329,10 +1329,8 @@ def build_elemtype(ctx, et, prefix=False):
                 if val is not None:
                     enumeration_dict[six.text_type(enum.arg)]["value"] = int(val.arg)
             elemtype = {
-                "native_type": """RestrictedClassType(base_type=six.text_type, \
-                                    restriction_type="dict_key", \
-                                    restriction_arg=%s,)"""
-                % (enumeration_dict),
+                "native_type": 'RestrictedClassType(base_type=six.text_type, restriction_type="dict_key", ' +
+                "restriction_arg=%s,)" % enumeration_dict,
                 "restriction_argument": enumeration_dict,
                 "restriction_type": "dict_key",
                 "parent_type": "string",
