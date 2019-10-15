@@ -763,7 +763,7 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 if case_ch.keyword == "choice":
                     handle_choice(case_ch, cur_choices)
                     continue
-                elements.extend(get_element(
+                new_elements = get_element(
                     ctx,
                     fd,
                     case_ch,
@@ -773,16 +773,17 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                     parent_cfg=parent_cfg,
                     choice=cur_choices,
                     register_paths=register_paths,
-                ))
+                )
+                elements.extend(new_elements)
                 if ctx.opts.split_class_dir:
-                    if hasattr(case_ch, "i_children") and len(case_ch.i_children):
+                    if hasattr(case_ch, "i_children") and len(case_ch.i_children) and new_elements:
                         import_req.append(case_ch.arg)
 
     for ch in i_children:
         if ch.keyword == "choice":
             handle_choice(ch, [])
         else:
-            elements += get_element(
+            new_elements = get_element(
                 ctx,
                 fd,
                 ch,
@@ -793,8 +794,10 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                 register_paths=register_paths,
             )
 
+            elements += new_elements
+
             if ctx.opts.split_class_dir:
-                if hasattr(ch, "i_children") and len(ch.i_children):
+                if hasattr(ch, "i_children") and len(ch.i_children) and new_elements:
                     import_req.append(ch.arg)
 
     # if len(elements) == 0:
@@ -1452,6 +1455,10 @@ def get_element(ctx, fd, element, module, parent, path, parent_cfg=True, choice=
     # Handle mapping of an invidual element within the model. This function
     # produces a dictionary that can then be mapped into the relevant code that
     # dynamically generates a class.
+
+    if element.keyword == "action":
+        sys.stderr.write(f"WARNING: 'action {element.arg}' is skipped (actions not supported)\n")
+        return []
 
     # Find element's namespace and defining module
     # If the element has the "main_module" attribute then it is part of a
