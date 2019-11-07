@@ -994,7 +994,7 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
                     class_str["arg"] = "base=%s" % i["type"]
                 if "default" in i and not i["default"] is None:
                     class_str["arg"] += ", default=%s(%s)" % (i["defaulttype"], default_arg)
-            if i["class"] in ["container", 'notification', 'rpc']:
+            if i["class"] in ["container", 'notification', 'rpc', 'input', 'output']:
                 class_str["arg"] += ", is_container='container'"
                 if ctx.opts.generate_presence:
                     class_str["arg"] += ", presence=%s" % i["presence"]
