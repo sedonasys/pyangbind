@@ -295,10 +295,11 @@ class pybindIETFJSONEncoder(_pybindJSONEncoderBase):
             return yname
 
     @staticmethod
-    def generate_element(obj, parent_namespace=None, flt=False, with_defaults=None):
+    def generate_element(obj, parent_namespace=None, flt=False, with_defaults=None, add_empty_lists=False):
         """Restructure pybind `obj` to IETF spec"""
         ietf_tree_json_func = make_generate_ietf_tree(pybindIETFJSONEncoder.yname_ns_func)
-        return ietf_tree_json_func(obj, parent_namespace=parent_namespace, flt=flt, with_defaults=with_defaults)
+        return ietf_tree_json_func(obj, parent_namespace=parent_namespace, flt=flt, with_defaults=with_defaults,
+                                   add_empty_lists=add_empty_lists)
 
 
 class pybindIETFXMLEncoder(object):
@@ -397,7 +398,7 @@ def make_generate_ietf_tree(yname_ns_func):
     Resulting namespaced key names can be customised via *yname_func*
     """
 
-    def generate_ietf_tree(obj, parent_namespace=None, flt=False, with_defaults=None):
+    def generate_ietf_tree(obj, parent_namespace=None, flt=False, with_defaults=None, add_empty_lists=False):
         generated_by = getattr(obj, "_pybind_generated_by", None)
         if generated_by == "YANGListType":
             return [generate_ietf_tree(i, flt=flt, with_defaults=with_defaults) for i in obj.itervalues()]
@@ -435,7 +436,7 @@ def make_generate_ietf_tree(yname_ns_func):
                     generate_ietf_tree(i, parent_namespace=element._namespace, flt=flt, with_defaults=with_defaults)
                     for i in element.itervalues()
                 ]
-                if not len(d[yname]):
+                if not len(d[yname]) and not add_empty_lists:
                     del d[yname]
             else:
                 if with_defaults is None:
