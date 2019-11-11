@@ -1422,4 +1422,10 @@ def ReferenceType__inner(*, referenced_path, require_instance):
                 return str(self._referenced_object)
             return str(self._get_ptr())
 
+        def __eq__(self, other):
+            return isinstance(other, ReferencePathType) and self._referenced_path == other._referenced_path
+
+        def __hash__(self):
+            return hash(self._referenced_path)
+
     return ReferencePathType
