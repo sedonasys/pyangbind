@@ -126,7 +126,7 @@ class JSONDeserialiseTests(PyangBindTestCase):
         try:
             with open(os.path.join(os.path.dirname(__file__), "json", "nonexist.json"), "r") as fp:
                 pybindJSONDecoder.load_ietf_json(json.load(fp), self.bindings, "json_deserialise", skip_unknown=False)
-        except AttributeError:
+        except pbS.NonExistingPathError:
             allowed = False
         self.assertFalse(allowed, "Skipping keys that did not exist was not successfully handled.")
 

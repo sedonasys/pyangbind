@@ -460,14 +460,14 @@ elif six.PY2:
         f"'clazz': {safe_name(mod.arg) if mod.arg in pyang_called_modules else 'None'}}}"
         for prefix, mod in sorted(new_all_mods,
                                   key=lambda prefix_and_mod:
-                                  (prefix_and_mod[1].arg not in pyang_called_modules, prefix_and_mod[1].arg))]
+                                  (prefix_and_mod[1].arg not in pyang_called_modules, prefix_and_mod[1].arg))
+        if mod.keyword == 'module']  # TODO: support for sub-modules in module-library
 
     module_library = "module_library = {\n    %s\n}\n\n" % ',\n    '.join(mod_rev)
     fd.write(module_library)
 
     if ctx.opts.split_class_dir:
         fd.close()
-
 
 
 def build_identities(ctx, defnd):
@@ -702,10 +702,10 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             # Check that we don't have the problem of containers that are nested
             # with the same name
             for i in range(1, len(pparts)):
-                if i > 0 and pparts[i] == pparts[i - 1]:
+                if i > 0 and safe_name(pparts[i]) == safe_name(pparts[i - 1]):
                     pname = safe_name(pparts[i]) + "_"
-                elif i == 1 and pparts[i] == module.arg:
-                    pname = safe_name(pparts[i]) + "_"
+                # elif i == 1 and pparts[i] == module.arg:
+                #     pname = safe_name(pparts[i]) + "_"
                 else:
                     pname = safe_name(pparts[i])
                 npath += pname + "/"
@@ -1123,10 +1123,9 @@ def get_children(ctx, fd, i_children, module, parent, path=str(), parent_cfg=Tru
             % path.split("/")[2 if is_data_tree else 1:]
         )
 
-        if len(path.split("/")) <= 2:
-            nfd.write(
+        nfd.write(
                 """
-  def _set(self, choice):
+  def _set(self, choice=False):
       return\n"""
             )
 

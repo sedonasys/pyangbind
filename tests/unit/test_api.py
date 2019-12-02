@@ -5,6 +5,7 @@ class APITests(PyangBindTestCase):
     yang_files = ["models/simple.yang"]
 
     def setUp(self):
+        self.simple = self.bindings.simple()
         self.simple_unchanged = self.bindings.simple()
         self.simple_changed_defaults = self.bindings.simple()
         self.simple_changed_non_defaults = self.bindings.simple()

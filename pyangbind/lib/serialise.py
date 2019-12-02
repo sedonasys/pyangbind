@@ -866,7 +866,7 @@ class pybindJSONDecoder(object):
                             k = this_attr.add()
                             nobj = this_attr[k]
                         elif " " in this_attr._keyval:
-                            pybindJSONDecoder._check_list_key_exists(this_attr, elem, this_attr._keyval.split(" "))
+                            pybindJSONDecoder._check_list_key_exists(this_attr, elem, this_attr._yang_keys.split(" "))
                             keystr = ""
                             kwargs = {}
                             for pkv, ykv in zip(this_attr._keyval.split(" "), this_attr._yang_keys.split(" ")):

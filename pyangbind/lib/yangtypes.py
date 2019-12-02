@@ -156,7 +156,10 @@ def RestrictedPrecisionDecimalType(precision=False):
             """
             if self._precision is not None:
                 if len(args):
-                    value = Decimal(args[0]).quantize(Decimal(str(self._precision)))
+                    try:
+                        value = Decimal(args[0]).quantize(Decimal(str(self._precision)))
+                    except TypeError:
+                        raise ValueError("Invalid decimal number")
                 else:
                     value = Decimal(0)
             elif len(args):
@@ -342,11 +345,11 @@ def RestrictedClassType__inner(*, base_type, restriction_type, restriction_arg, 
                     for range_spec in rarg:
                         ranges.append(build_length_range_tuples(range_spec))
                     self._restriction_tests.append(in_range_check(ranges))
-                    if val:
+                    if val is not False:
                         try:
                             val = base_type(val)
                         except Exception:
-                            raise TypeError("must specify a numeric type for a range " + "argument")
+                            raise ValueError("must specify a numeric type for a range " + "argument")
                 elif rtype == "length":
                     # When the type is a binary then the length is specified in
                     # octets rather than bits, so we must specify the length to
@@ -378,7 +381,7 @@ def RestrictedClassType__inner(*, base_type, restriction_type, restriction_arg, 
                     self._restriction_tests.append(in_dictionary_check(new_rarg))
                     self._enumeration_dict = new_rarg
                 else:
-                    raise TypeError("unsupported restriction type")
+                    raise ValueError("unsupported restriction type")
 
             if val is not False:
                 for test in self._restriction_tests:
@@ -436,7 +439,7 @@ def TypedListType__inner(allowed_type):
     if not isinstance(allowed_type, tuple):
         allowed_type = (allowed_type,)
 
-    class TypedList(collections.MutableSequence):
+    class TypedList(collections.abc.MutableSequence):
         _pybind_generated_by = "TypedListType"
         _list = list()
 
@@ -489,15 +492,7 @@ def TypedListType__inner(allowed_type):
                 try:
                     if hasattr(i, "_pybind_generated_by"):
                         attr = getattr(i, "_pybind_generated_by")
-                        if attr == "RestrictedClassType":
-                            tmp = dyn_wrapper(i)
-                            passed = True
-                            break
-                        elif attr == "ReferencePathType":
-                            tmp = dyn_wrapper(i)
-                            passed = True
-                            break
-                        elif attr == "RestrictedPrecisionDecimal":
+                        if attr in ["RestrictedClassType", "ReferencePathType", "RestrictedPrecisionDecimal"]:
                             tmp = dyn_wrapper(i)
                             passed = True
                             break
@@ -563,7 +558,7 @@ def TypedListType__inner(allowed_type):
 
 
 def yname_ns_func(element):
-    if not element._namespace == element._parent._namespace:
+    if not element._namespace == (getattr(element._parent, '_namespace', None) or getattr(element._parent, '_yang_namespace')):
         # if the namespace is different, then precede with the module
         # name as per spec.
         return "%s:%s" % (element._defining_module, element._yang_name)
@@ -1140,7 +1135,7 @@ def YANGDynClass__inner(base_type, is_container, yang_type):
 
             # lists themselves do not register, only elements within them
             # are actually created in the tree.
-            if not self._is_container == "list":
+            if not self._is_container == "list" and not is_yang_leaflist(self._parent):
                 if self._path_helper:
                     if self._supplied_register_path is None:
                         if self._register_paths:
@@ -1198,7 +1193,7 @@ def YANGDynClass__inner(base_type, is_container, yang_type):
             if self._presence:
                 self._cpresent = True
 
-            if self._parent: # and hasattr(self._parent, "_set"):    # parent MUST have a '_set'
+            if self._parent not in [False, None]:  # and hasattr(self._parent, "_set"):    # parent MUST have a '_set'
                 self._parent._set(choice=self._choice)
 
         def _add_metadata(self, k, v):
@@ -1423,7 +1418,11 @@ def ReferenceType__inner(*, referenced_path, require_instance):
             return str(self._get_ptr())
 
         def __eq__(self, other):
-            return isinstance(other, ReferencePathType) and self._referenced_path == other._referenced_path
+            return self is other or \
+                   (isinstance(other, ReferencePathType) and
+                    # 'getattr' hack as '__eq__' may be called when self/other are not fully constructed
+                    # (super.__init__() not called yet) which is very difficult to resolve.
+                    getattr(self, '_referenced_path', 1) == getattr(other, '_referenced_path', 2))
 
         def __hash__(self):
             return hash(self._referenced_path)

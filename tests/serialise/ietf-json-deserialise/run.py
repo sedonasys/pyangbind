@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from bitarray import bitarray
 
-from pyangbind.lib.serialise import pybindJSONDecoder
+from pyangbind.lib.serialise import pybindJSONDecoder, NonExistingPathError
 from tests.base import PyangBindTestCase
 
 
@@ -122,7 +122,7 @@ class IETFJSONDeserialiseTests(PyangBindTestCase):
                 pybindJSONDecoder.load_ietf_json(
                     json.load(fp), self.bindings, "ietf_json_deserialise", skip_unknown=False
                 )
-        except AttributeError:
+        except NonExistingPathError:
             allowed = False
         self.assertFalse(allowed, "Skipping keys that did not exist was not successfully handled.")
 

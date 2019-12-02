@@ -21,9 +21,9 @@ class MiscTests(PyangBindTestCase):
     # Check that we can ingest an OpenConfig style list entry
     # with a leafref to the key
     def test_001_setleafref(self):
-        import bindings.a as misca
+        import bindings.misc as misc
 
-        a = misca.a()
+        a = misc().a._new_item()
         a.foo = "stringval"
 
         self.instance.a.append(a)
@@ -31,9 +31,9 @@ class MiscTests(PyangBindTestCase):
         self.assertEqual(self.instance.a["stringval"].config.foo, "stringval")
 
     def test_002_checklistkeytype(self):
-        import bindings.b as miscb
+        import bindings.misc as misc
 
-        b = miscb.b()
+        b = misc().b._new_item()
         b.foo = "stringvalone"
         b.bar = "stringvaltwo"
 
@@ -41,9 +41,9 @@ class MiscTests(PyangBindTestCase):
         self.assertIsInstance(list(self.instance.b.keys())[0], six.text_type)
 
     def test_003_checklistkeytype(self):
-        import bindings.c as miscc
+        import bindings.misc as misc
 
-        c = miscc.c()
+        c = misc().c._new_item()
         c.one = 42
 
         self.instance.c.append(c)

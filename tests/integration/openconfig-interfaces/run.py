@@ -28,7 +28,7 @@ class OpenconfigInterfacesTests(PyangBindTestCase):
         },
         {
             "local_path": "include",
-            "remote_prefix": "https://raw.githubusercontent.com/openconfig/public/master/release/models/",
+            "remote_prefix": "https://raw.githubusercontent.com/openconfig/public/facd687c2e9029b9424b72af60852f720d63a697/release/models/",
             "files": [
                 "openconfig-extensions.yang",
                 "types/openconfig-types.yang",
@@ -40,7 +40,7 @@ class OpenconfigInterfacesTests(PyangBindTestCase):
         },
         {
             "local_path": "openconfig",
-            "remote_prefix": "https://raw.githubusercontent.com/openconfig/public/master/release/models/",
+            "remote_prefix": "https://raw.githubusercontent.com/openconfig/public/facd687c2e9029b9424b72af60852f720d63a697/release/models/",
             "files": [
                 "interfaces/openconfig-if-ip.yang",
                 "interfaces/openconfig-if-ethernet.yang",
